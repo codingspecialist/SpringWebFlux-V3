@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cos.reactivestream.domain.Customer;
@@ -16,7 +15,9 @@ import com.cos.reactivestream.domain.CustomerRepository;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Sinks.EmitFailureHandler;
 import reactor.core.publisher.Sinks.EmitResult;
 
 // 참고 : https://spring.io/guides/gs/accessing-data-r2dbc/
@@ -37,12 +38,10 @@ public class CustomerController {
 	
 	private final CustomerRepository customerRepository;
 	private final Sinks.Many<String> sink;
-	private final AtomicLong counter;
 	
 	public CustomerController(CustomerRepository customerRepository) {
 		this.customerRepository = customerRepository;
 		this.sink = Sinks.many().multicast().onBackpressureBuffer();  // unicast, multicast, replay
-		this.counter = new AtomicLong();
 	}
 	
 	@GetMapping("/customer")
@@ -57,7 +56,11 @@ public class CustomerController {
 	
 	@GetMapping(value="/customer/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
 	public Flux<ServerSentEvent<String>> findAllSSE(){
-		return sink.asFlux().map(e -> ServerSentEvent.builder(e).build());
+		return sink.asFlux().map(e -> ServerSentEvent.builder(e).build()).doOnCancel(()-> {
+			System.out.println("sse 종료됨");
+			sink.asFlux().blockLast(); // 연결 종료 후에 재연결 가능하게 해줌.
+			
+		});
 	}
 	
 	// ~~~~~~~~~~~~~~~~~~~  SSE 프로토콜
